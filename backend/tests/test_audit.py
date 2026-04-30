@@ -131,6 +131,21 @@ async def test_audit_log_is_append_only_no_update(db_session, owner_user) -> Non
     await db_session.rollback()
 
 
+async def test_audit_log_is_append_only_no_truncate(db_session, owner_user) -> None:
+    await write_audit(
+        db_session,
+        action="test.write.truncate",
+        status="success",
+        user_id=owner_user.id,
+    )
+    await db_session.commit()
+
+    with pytest.raises(DBAPIError, match="append-only.*TRUNCATE"):
+        await db_session.execute(text("TRUNCATE audit_log RESTART IDENTITY"))
+        await db_session.commit()
+    await db_session.rollback()
+
+
 async def test_audit_log_is_append_only_no_delete(db_session, owner_user) -> None:
     await write_audit(
         db_session,

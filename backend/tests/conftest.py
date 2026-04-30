@@ -125,19 +125,25 @@ async def db_session(db_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
 
 @pytest_asyncio.fixture(autouse=True)
 async def _truncate_tables(db_engine: AsyncEngine) -> AsyncIterator[None]:
-    """Wipe user-data tables between tests. audit_log is append-only at the
-    DB level; we use TRUNCATE which bypasses our row-level trigger, so tests
-    can still reset state. (The trigger blocks DELETE, not TRUNCATE.)"""
+    """Wipe user-data tables between tests. audit_log has BEFORE
+    UPDATE/DELETE/TRUNCATE triggers (append-only enforcement) which we must
+    disable just for the test cleanup window."""
     yield
     async with db_engine.begin() as conn:
-        for table in (
-            RefreshToken.__tablename__,
-            Passkey.__tablename__,
-            BrokerAccount.__tablename__,
-            AuditLog.__tablename__,
-            User.__tablename__,
-        ):
-            await conn.execute(text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE'))
+        await conn.execute(text("ALTER TABLE audit_log DISABLE TRIGGER ALL"))
+        try:
+            for table in (
+                RefreshToken.__tablename__,
+                Passkey.__tablename__,
+                BrokerAccount.__tablename__,
+                AuditLog.__tablename__,
+                User.__tablename__,
+            ):
+                await conn.execute(
+                    text(f'TRUNCATE TABLE "{table}" RESTART IDENTITY CASCADE')
+                )
+        finally:
+            await conn.execute(text("ALTER TABLE audit_log ENABLE TRIGGER ALL"))
 
 
 @pytest_asyncio.fixture
