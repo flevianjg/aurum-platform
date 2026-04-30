@@ -281,13 +281,122 @@ aurum-platform/
 
 ---
 
-## 10. What Phase 1 does NOT include
+## 10. Phase 2 — Broker connections
 
-Phase 1 is intentionally narrow. The following are explicitly **out of scope**
-and will land in subsequent phases:
+Phase 2 adds a clean `BrokerAdapter` abstraction with two concrete adapters
+(MT5 and OANDA), per-user encrypted credential storage, and 8 CRUD endpoints
+under `/broker`. **No trade execution yet** — only connection management and
+read-only live operations (account info, positions, ticks). All endpoints
+require the JWT from Phase 1 and write to `audit_log`. **Credentials are
+never logged, never returned in responses, and never appear in audit
+metadata.**
 
-* **Phase 2** — broker connection logic (MT5, OANDA), credential vaulting in
-  `broker_accounts`, account discovery, balance polling.
+### Endpoints
+
+| Method | Path                              | Notes                                     |
+| ------ | --------------------------------- | ----------------------------------------- |
+| POST   | `/broker/test`                    | Test creds without storing (10/min)       |
+| POST   | `/broker`                         | Connect — encrypts + stores (5/min)       |
+| GET    | `/broker`                         | List own accounts (100/min)               |
+| GET    | `/broker/{id}`                    | Detail + live account info                |
+| POST   | `/broker/{id}/test`               | Re-test stored creds (10/min)             |
+| PATCH  | `/broker/{id}/deactivate`         | Soft-disable (audit preserved)            |
+| PATCH  | `/broker/{id}/reactivate`         | Re-enable                                 |
+| DELETE | `/broker/{id}`                    | Hard delete (cascades health checks)      |
+
+`VIEWER` role is rejected with 403 on every broker action; `OWNER` and
+`MEMBER` can manage their own broker accounts only — `GET /broker/{id}`
+returns 404 (not 403) for accounts owned by another user, to avoid leaking
+existence.
+
+### OANDA quick-test (end-to-end)
+
+1. Get an OANDA practice token from
+   `https://www.oanda.com/demo-account/tpa/personal_token` (signup is free).
+2. Note your account id (looks like `001-001-1234567-001`) from the OANDA
+   dashboard.
+3. Test the credentials WITHOUT storing them:
+
+   ```bash
+   ACCESS=<your-jwt-from-passkey-login>
+   curl -X POST https://anvisutra.com/broker/test \
+     -H "Authorization: Bearer $ACCESS" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "broker_type": "OANDA",
+       "credentials": {
+         "account_id": "001-001-1234567-001",
+         "api_token": "YOUR_OANDA_TOKEN",
+         "environment": "practice"
+       }
+     }'
+   ```
+   Expected: `{"success": true, "account_number": "...", "currency": "USD", ...}`.
+
+4. Persist them (test runs first; if the test fails, nothing is stored):
+
+   ```bash
+   curl -X POST https://anvisutra.com/broker \
+     -H "Authorization: Bearer $ACCESS" -H "Content-Type: application/json" \
+     -d '{
+       "broker_type": "OANDA",
+       "account_label": "OANDA Practice",
+       "credentials": {
+         "account_id": "001-001-1234567-001",
+         "api_token": "YOUR_OANDA_TOKEN",
+         "environment": "practice"
+       }
+     }'
+   ```
+   Returns `{"id": "...", "broker_type": "OANDA", ...}` — store the id.
+
+5. Read live account info (decrypts creds in-memory only for this call):
+
+   ```bash
+   curl https://anvisutra.com/broker/<id> -H "Authorization: Bearer $ACCESS"
+   ```
+
+### MT5 (Phase 2 limitation)
+
+The `MetaTrader5` Python package is **Windows-only** and cannot run inside the
+Linux backend container. Phase 2 ships:
+
+* **`MT5Adapter`** with the full contract (`test_connection`,
+  `get_account_info`, `get_positions`, `get_tick`).
+* **`MT5_TEST_MODE`** environment flag (default **`true`** in
+  `.env.example`) — every method returns canned successful results so
+  end-to-end testing of the encrypted credential storage works without a
+  real MT5 terminal.
+* **`workers/mt5_runner.py`** — a fully implemented standalone Windows
+  runner script that reads JSON over stdin, talks to the MetaTrader5
+  package, and returns JSON over stdout. **Phase 4** will deploy this on
+  a Windows host and set `WINDOWS_HOST_RUNNER` so the adapter can shell
+  out to it.
+
+This means: on this Linux stack, MT5 connections "work" (canned data) for
+the API contract, but real live MT5 trades will only be possible after the
+Phase 4 host bridge.
+
+### Security hygiene (Phase 2 invariants)
+
+* Credentials are encrypted at rest via libsodium `SecretBox` (XChaCha20-Poly1305)
+  with a per-record 24-byte nonce. Master key from `MASTER_KEY` env var, validated
+  at startup.
+* Pydantic `SecretStr` is used on `password` / `api_token` fields, so any
+  accidental `.model_dump()` or pretty-print emits `**********`.
+* The audit-log writer (`app/core/audit.py`) scrubs known forbidden keys
+  (`password`, `api_token`, `credentials`, etc.) from metadata before
+  inserting; broker routes additionally never pass credentials INTO audit
+  metadata in the first place. Tests assert no plaintext credential string
+  ever reaches `audit_log` rows or any API response body.
+
+---
+
+## 11. What is still NOT in scope
+
+Phase 1 + Phase 2 cover authentication + broker connection management.
+Out of scope until later phases:
+
 * **Phase 3** — frontend (SPA) for login, dashboard, account management, and
   trade visualization. The Content-Security-Policy in `Caddyfile` is currently
   locked down (`default-src 'none'`); it will be tightened/loosened per the

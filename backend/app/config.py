@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     APP_ENV: str = "production"
     LOG_LEVEL: str = "INFO"
 
+    # Broker (Phase 2)
+    # MT5_TEST_MODE: when True, MT5Adapter returns canned data without spawning a
+    # subprocess. Required for the Linux backend container (MetaTrader5 is Win-only).
+    # Phase 4 will set this False on a Windows host bridge.
+    MT5_TEST_MODE: bool = True
+    WINDOWS_HOST_RUNNER: str | None = None  # path to mt5_runner.py on Windows host
+    OANDA_API_TIMEOUT_SECONDS: float = 10.0
+
     @field_validator("MASTER_KEY")
     @classmethod
     def _validate_master_key(cls, v: str) -> str:

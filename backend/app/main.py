@@ -18,6 +18,7 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api import auth as auth_routes
+from app.api import broker as broker_routes
 from app.api import health as health_routes
 from app.api import me as me_routes
 from app.config import get_settings
@@ -78,6 +79,7 @@ def create_app() -> FastAPI:
     app.include_router(health_routes.router)
     app.include_router(auth_routes.router)
     app.include_router(me_routes.router)
+    app.include_router(broker_routes.router)
 
     return app
 

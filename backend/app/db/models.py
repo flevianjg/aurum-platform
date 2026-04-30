@@ -133,7 +133,46 @@ class BrokerAccount(Base):
         onupdate=func.now(),
     )
 
+    # Phase 2 additions
+    last_tested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_test_status: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_test_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    account_currency: Mapped[str | None] = mapped_column(Text, nullable=True)
+    server: Mapped[str | None] = mapped_column(Text, nullable=True)
+    account_number: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deactivated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     user: Mapped[User] = relationship(back_populates="broker_accounts")
+    health_checks: Mapped[list["BrokerHealthCheck"]] = relationship(
+        back_populates="broker_account", cascade="all, delete-orphan"
+    )
+
+
+class BrokerHealthCheck(Base):
+    __tablename__ = "broker_health_checks"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    broker_account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("broker_accounts.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    status: Mapped[str] = mapped_column(Text, nullable=False)
+    latency_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    broker_account: Mapped[BrokerAccount] = relationship(back_populates="health_checks")
+
+    __table_args__ = (
+        Index("ix_broker_health_acct_ts", "broker_account_id", "ts"),
+    )
 
 
 class AuditLog(Base):
