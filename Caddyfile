@@ -1,0 +1,42 @@
+# Caddy listens on 8080 inside the compose network.
+# Cloudflare Tunnel terminates TLS publicly and points at http://localhost:8080.
+# So this Caddy is HTTP-only — TLS happens at Cloudflare's edge.
+
+{
+	admin off
+	auto_https off
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+:8080 {
+	encode gzip zstd
+
+	# Security headers on every response
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "geolocation=(), microphone=(), camera=()"
+		# Phase 1 has no frontend; CSP will be tightened when the SPA lands in Phase 3.
+		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+		# Hide Caddy version
+		-Server
+	}
+
+	# Reverse proxy everything to the FastAPI backend
+	reverse_proxy backend:8000 {
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-Host {host}
+	}
+
+	log {
+		output stdout
+		format json
+		level INFO
+	}
+}
