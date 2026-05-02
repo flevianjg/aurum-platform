@@ -61,6 +61,15 @@ class Settings(BaseSettings):
     WINDOWS_HOST_RUNNER: str | None = None  # path to mt5_runner.py on Windows host
     OANDA_API_TIMEOUT_SECONDS: float = 10.0
 
+    # Phase 4 — aurum_2 brain integration paths (in-container)
+    AURUM_JOURNAL_DIR: str = "/aurum_2/journal"
+    AURUM_STATE_FILE: str = "/aurum_2/state/current_state.json"
+    AURUM_CONTROL_DIR: str = "/aurum_2/control"
+    AURUM_ETL_POLL_INTERVAL_SECONDS: float = 1.0
+    AURUM_ETL_BATCH_SIZE: int = 500
+    AURUM_RUNNER_RESPONSIVE_THRESHOLD_SECONDS: float = 60.0
+    AURUM_ETL_ENABLED: bool = True  # set False in tests where we don't want a background task
+
     @field_validator("MASTER_KEY")
     @classmethod
     def _validate_master_key(cls, v: str) -> str:

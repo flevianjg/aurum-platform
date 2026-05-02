@@ -175,6 +175,91 @@ class BrokerHealthCheck(Base):
     )
 
 
+# ===================================================================
+# Phase 4 — aurum_2 brain integration
+# ===================================================================
+
+
+class PaperEvent(Base):
+    """One row per journal line, keyed by event_id.
+
+    Pre-contract lines (no event_id in source) get a UUID5 synthesized at
+    ingest time; event_id_synthetic flags those rows so analytics queries
+    can filter them out if needed.
+    """
+
+    __tablename__ = "paper_events"
+
+    event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    instrument: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_type: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    source_file: Mapped[str] = mapped_column(Text, nullable=False)
+    source_line: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    event_id_synthetic: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+
+    __table_args__ = (
+        Index("ix_paper_events_ts", "ts"),
+        Index("ix_paper_events_type_ts", "event_type", "ts"),
+        Index("ix_paper_events_instrument_ts", "instrument", "ts"),
+    )
+
+
+class EtlCheckpoint(Base):
+    """One row per ETL source. Updated after each successful batch."""
+
+    __tablename__ = "etl_checkpoints"
+
+    source: Mapped[str] = mapped_column(Text, primary_key=True)
+    last_processed_file: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_processed_ts: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_event_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class ControlAction(Base):
+    """Audit trail for pause/resume/stop. Mirrors audit_log but specific to
+    aurum_2 control writes — kept separate so timeline queries are cheap and
+    the foreign-key constraints differ (audit_log keeps user_id on user
+    deletion via ON DELETE SET NULL; control_actions does the same)."""
+
+    __tablename__ = "control_actions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    ts: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    action: Mapped[str] = mapped_column(Text, nullable=False)
+    request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    control_metadata: Mapped[dict | None] = mapped_column(
+        "metadata", JSONB, nullable=True
+    )
+
+    __table_args__ = (Index("ix_control_actions_ts", "ts"),)
+
+
 class AuditLog(Base):
     __tablename__ = "audit_log"
 

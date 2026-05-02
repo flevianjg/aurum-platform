@@ -7,6 +7,7 @@ request.state and echoed in audit_log + error responses.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -17,6 +18,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.api import aurum as aurum_routes
 from app.api import auth as auth_routes
 from app.api import broker as broker_routes
 from app.api import health as health_routes
@@ -24,6 +26,7 @@ from app.api import me as me_routes
 from app.config import get_settings
 from app.core.errors import install_error_handlers
 from app.core.rate_limit import limiter
+from app.workers.journal_etl import run_loop as run_etl_loop
 
 logging.basicConfig(level=get_settings().LOG_LEVEL.upper())
 
@@ -42,8 +45,24 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Eagerly validate settings — fail fast if env is misconfigured.
-    get_settings()
-    yield
+    settings = get_settings()
+
+    etl_stop: asyncio.Event | None = None
+    etl_task: asyncio.Task[None] | None = None
+    if settings.AURUM_ETL_ENABLED:
+        etl_stop = asyncio.Event()
+        etl_task = asyncio.create_task(run_etl_loop(etl_stop), name="aurum-etl")
+        logging.getLogger(__name__).info("aurum_2 ETL background task started")
+
+    try:
+        yield
+    finally:
+        if etl_task is not None and etl_stop is not None:
+            etl_stop.set()
+            try:
+                await asyncio.wait_for(etl_task, timeout=5.0)
+            except asyncio.TimeoutError:
+                etl_task.cancel()
 
 
 def create_app() -> FastAPI:
@@ -80,6 +99,7 @@ def create_app() -> FastAPI:
     app.include_router(auth_routes.router)
     app.include_router(me_routes.router)
     app.include_router(broker_routes.router)
+    app.include_router(aurum_routes.router)
 
     return app
 

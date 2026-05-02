@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="1024" height="1024">
+  <rect width="160" height="160" rx="36" fill="#0A1A1F"/>
+  
+  <!-- Subtle glow behind center node -->
+  <circle cx="80" cy="75" r="30" fill="#1DBEA0" opacity="0.08"/>
+  
+  <!-- Primary strand -->
+  <path d="M 25 100 Q 50 45 80 75 Q 110 105 135 50" fill="none" stroke="#2DD4A8" stroke-width="6" stroke-linecap="round"/>
+  <!-- Secondary strand -->
+  <path d="M 25 50 Q 50 105 80 75 Q 110 45 135 100" fill="none" stroke="#0F9E78" stroke-width="5.5" stroke-linecap="round"/>
+  
+  <!-- Nodes -->
+  <circle cx="25" cy="100" r="7" fill="#2DD4A8"/>
+  <circle cx="25" cy="50" r="7" fill="#0F9E78"/>
+  <circle cx="80" cy="75" r="14" fill="#1DBEA0"/>
+  <circle cx="80" cy="75" r="8.5" fill="#7EECD0"/>
+  <circle cx="135" cy="50" r="8" fill="#2DD4A8"/>
+  <circle cx="135" cy="100" r="8" fill="#0F9E78"/>
+</svg>

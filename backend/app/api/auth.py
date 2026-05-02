@@ -35,7 +35,7 @@ from webauthn.helpers.structs import (
     UserVerificationRequirement,
 )
 
-from app.api.deps import client_ip, user_agent
+from app.api.deps import client_ip, get_current_user, user_agent
 from app.config import get_settings
 from app.core.audit import write_audit
 from app.core.errors import AuthError, ConflictError, NotFoundError
@@ -606,3 +606,37 @@ async def logout(
 
     response.status_code = status.HTTP_200_OK
     return LogoutResponse(revoked=revoked)
+
+
+@router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit(AUTH_LIMIT)
+async def logout_all(
+    request: Request,
+    response: Response,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    """Revoke every refresh token for the current user, including the current session.
+
+    Audit metadata records the count revoked so we can detect "panic-button"
+    sign-outs in the trail without storing the tokens themselves.
+    """
+    now = datetime.now(timezone.utc)
+    result = await session.execute(
+        update(RefreshToken)
+        .where(RefreshToken.user_id == user.id)
+        .where(RefreshToken.revoked_at.is_(None))
+        .values(revoked_at=now)
+    )
+    _clear_refresh_cookie(response)
+    await write_audit(
+        session,
+        action="auth.logout_all",
+        status="success",
+        user_id=user.id,
+        ip_address=client_ip(request),
+        user_agent=user_agent(request),
+        request_id=getattr(request.state, "request_id", None),
+        metadata={"revoked_count": result.rowcount or 0},
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -47,11 +47,22 @@ def _derive_test_db_url() -> str:
 
 TEST_DB_URL = _derive_test_db_url()
 os.environ["DATABASE_URL"] = TEST_DB_URL  # rebind app engine to test DB
+# The aurum_2 ETL background task would race with tests if it touched the
+# real DB during a test session. Disable by default in tests.
+os.environ.setdefault("AURUM_ETL_ENABLED", "false")
+# Pin in-container paths to test-friendly locations so tests can mutate
+# them without touching the real aurum_2 dir.
+os.environ.setdefault("AURUM_JOURNAL_DIR", "/tmp/aurum_test/journal")
+os.environ.setdefault("AURUM_STATE_FILE", "/tmp/aurum_test/state/current_state.json")
+os.environ.setdefault("AURUM_CONTROL_DIR", "/tmp/aurum_test/control")
 
 # Now safe to import app modules
 from app.db.models import (  # noqa: E402
     AuditLog,
     BrokerAccount,
+    ControlAction,
+    EtlCheckpoint,
+    PaperEvent,
     Passkey,
     RefreshToken,
     User,
@@ -136,6 +147,9 @@ async def _truncate_tables(db_engine: AsyncEngine) -> AsyncIterator[None]:
                 RefreshToken.__tablename__,
                 Passkey.__tablename__,
                 BrokerAccount.__tablename__,
+                ControlAction.__tablename__,
+                PaperEvent.__tablename__,
+                EtlCheckpoint.__tablename__,
                 AuditLog.__tablename__,
                 User.__tablename__,
             ):
